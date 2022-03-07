@@ -1,13 +1,23 @@
 #!/bin/bash
 
-# Migrate from "apt-key" managed keys to "[signed-by=/usr/share/keyrings/...]":
-# - loop through all lists in /etc/apt/sources.list.d
-#   - read all lines with "deb..." that do not contain "[signed-by=]"
-#   - download the GPG signature from the URL
-#     - read the key ID from the signature
-#     - download and saves the key using gpg
-#   - add "[signed-by=/usr/share/keyrings/...]" to the "deb..." line
-# - make a backup of the old .list file as .list.apt-key
+# DESCRIPTION
+#   Migrate from "apt-key" managed keys to "[signed-by=/usr/share/keyrings/...]":
+#   - loop through all lists in /etc/apt/sources.list.d
+#     - read all lines with "deb..." that do not contain "[signed-by=]"
+#     - download the GPG signature from the URL
+#       - read the key ID from the signature
+#       - download and saves the key using gpg
+#     - add "[signed-by=/usr/share/keyrings/...]" to the "deb..." line
+#   - make a backup of the old .list file as .list.apt-key
+#
+# REQUIREMENTS
+#   bash, perl, curl, gpg
+#
+# CAVEATS
+#   This does not work e.g. for Anydesk as the Ubuntu keyserver stores an old key.
+#   You can manually download the ASCII armored key like this:
+#     curl https://keys.anydesk.com/repos/DEB-GPG-KEY | gpg --dearmor > /usr/share/keyrings/anydesk-stable-archive-keyring.gpg
+#   See: https://lists.ubuntu.com/archives/ubuntu-users/2022-January/306500.html
 
 set -e
 
@@ -58,8 +68,6 @@ for repo in /etc/apt/sources.list.d/*.list; do
       fi
       mv $temp_sig $sig_file
       chmod 0644 $sig_file
-      # manual download of an ASCII armored key:
-      # curl https://keys.anydesk.com/repos/DEB-GPG-KEY | gpg --dearmor > /usr/share/keyrings/anydesk-stable-archive-keyring.gpg
     fi
 
     echo "$line" \
