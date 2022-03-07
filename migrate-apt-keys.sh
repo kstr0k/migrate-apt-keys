@@ -14,8 +14,8 @@
 #   bash, perl, curl, gpg
 #
 # CAVEATS
-#   This does not work e.g. for Anydesk as the Ubuntu keyserver stores an old key.
-#   You can manually download the ASCII armored key like this:
+#   This does not work e.g. for Anydesk as the Ubuntu keyserver returns an expired key.
+#   But you can manually download the ASCII armored key and then run migrate-apt-keys.sh:
 #     curl https://keys.anydesk.com/repos/DEB-GPG-KEY | gpg --dearmor > /usr/share/keyrings/anydesk-stable-archive-keyring.gpg
 #   See: https://lists.ubuntu.com/archives/ubuntu-users/2022-January/306500.html
 
