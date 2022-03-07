@@ -1,14 +1,16 @@
 #!/bin/bash
 
 # DESCRIPTION
-#   Migrate from "apt-key" managed keys to "[signed-by=/usr/share/keyrings/...]":
-#   - loop through all lists in /etc/apt/sources.list.d
-#     - read all lines with "deb..." that do not contain "[signed-by=]"
-#     - download the GPG signature from the URL
-#       - read the key ID from the signature
-#       - download and saves the key using gpg
-#     - add "[signed-by=/usr/share/keyrings/...]" to the "deb..." line
-#   - make a backup of the old .list file as .list.apt-key
+#   This script migrates from "apt-key" managed keys to "[signed-by=/usr/share/keyrings/...]":
+#    - loop through all lists in /etc/apt/sources.list.d
+#      - read all lines with "deb..." that do not contain "[signed-by=]"
+#      - download the GPG signature from the URL
+#        - read the key ID from the signature
+#        - download and saves the key using gpg
+#      - add "[signed-by=/usr/share/keyrings/...]" to the "deb..." line
+#    - make a backup of the old .list file as .list.apt-key
+#  After the migration you have to delete (or rename to be safe) /etc/apt/trusted.gpg.d and
+#  /etc/apt/trusted.gpg
 #
 # REQUIREMENTS
 #   bash, perl, curl, gpg
