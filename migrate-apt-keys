@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # DESCRIPTION
-#   This script migrates from "apt-key" managed keys to "[signed-by=/usr/share/keyrings/...]":
+#   This script migrates from "apt-key" managed keys to "[signed-by=.../keyrings/...]":
 #    - loop through all lists in /etc/apt/sources.list.d
 #      - read all lines with "deb..." that do not contain "[signed-by=]"
 #      - download the GPG signature from the URL
@@ -12,8 +12,6 @@
 #
 # USAGE
 #   See --help.
-#   Back up /etc/apt/trusted.gpg.d and /etc/apt/trusted.gpg beforehand.
-#   After the migration, check that 'apt update' works, then delete the originals.
 #
 # REQUIREMENTS
 #   perl, curl, gpg
@@ -30,13 +28,22 @@
 
 set -ue
 
+keyrings=/usr/local/share/keyrings
+
 eecho() {
   printf '%s\n' "$*"
 }
 
 case "${1:-}" in (-h|--help)
-  cat <<'EOF'
+  cat <<EOF
 Args: [ KEYRING_FOLDER [SOURCE.list]... ]
+Defaults:
+  KEYRING_FOLDER=$keyrings
+  SOURCE=( /etc/apt/sources.list /etc/apt/sources.list.d/*.list )
+
+Before migrating, back up KEYRING_FOLDER, as well as SOURCEs. Files therein
+will be modified. After migrating, check if 'apt update' works, then delete
+(or better rename) '/etc/apt/trusted.gpg.d' and '/etc/apt/trusted.gpg'.
 EOF
   exit 0
 esac
@@ -50,7 +57,6 @@ cleanup() {
 trap 'cleanup' EXIT
 trap 'cleanup; exit 1' PIPE INT TERM QUIT
 
-keyrings=/usr/share/keyrings
 if [ "$#" != 0 ]; then
   keyrings=$1
   shift
@@ -60,7 +66,7 @@ if [ "$#" = 0 ]; then set -- /etc/apt/sources.list /etc/apt/sources.list.d/*.lis
 
 for repo; do
   sig_base=${repo%.list}; sig_base=${sig_base##*/}
-  sig_file=$keyrings/$sig_base-archive-keyring.gpg
+  sig_file=$keyrings/$sig_base-apt-keyring.gpg
   sig_keys=' '
   new_repo=$workdir/new_repo.list; : >"$new_repo"
   now_secs=$(date '+%s')
