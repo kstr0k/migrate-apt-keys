@@ -28,6 +28,9 @@
 
 set -ue
 
+newline='
+'
+
 keyrings=/usr/local/share/keyrings
 
 eecho() {
@@ -64,6 +67,8 @@ fi
 mkdir -p "$keyrings"
 if [ "$#" = 0 ]; then set -- /etc/apt/sources.list /etc/apt/sources.list.d/*.list; fi
 
+url_key_map=$newline
+
 for repo; do
   test -f "$repo" || continue
   sig_base=${repo##*/}; sig_base=${sig_base%.list}; sig_base=${sig_base%.list.*}
@@ -85,10 +90,13 @@ for repo; do
 
     eecho "$sig_base: += $line"
 
-      # assemble URL
-      url=$(eecho "$line" | perl -pe 's{^ (?:(?:deb|deb-src) \s+) (?: \[[^\]]+] \s+)? (\S+?)/? \s+ (\S+) \s+ .* }{ $suite=$2; "$1/".($suite=~m|/$|?$suite:"dists/$2/") }xe')
-      eecho "$sig_base: downloading $url"
+    # assemble URL
+    url=$(eecho "$line" | perl -pe 's{^ (?:(?:deb|deb-src) \s+) (?: \[[^\]]+] \s+)? (\S+?)/? \s+ (\S+) \s+ .* }{ $suite=$2; "$1/".($suite=~m|/$|?$suite:"dists/$2/") }xe')
 
+    if [ -z "${url_key_map##*$newline$url *}" ]; then
+      keyid=${url_key_map##*$newline$url }; keyid=${keyid%%$newline*}
+    else
+      eecho "$sig_base: downloading $url"
       # download signature
       if ! sigfile=$(curl -s -f -L "${url}InRelease"); then
         if ! sigfile=$(curl -s -f -L "${url}Release.gpg"); then
@@ -100,8 +108,10 @@ for repo; do
       keyid=$(eecho "$sigfile" | gpg --verify -vv 2>&1 | tr '\n' ' ' | perl -pe 's{.*signature.*keyid ([0-9A-Z]+).*}{$1}i')
       if [ -z "$keyid" ]; then eecho "$sig_base: Could not find key id in signature"; exit 1; fi
       eecho "$sig_base: key id = $keyid"
+      url_key_map="$newline$url $keyid$url_key_map"
+    fi
 
-    if [ -n "${sig_keys##* $keyid *}" ]; then
+    if [ -n "$keyid" ] && [ -n "${sig_keys##* $keyid *}" ]; then
       # download key
       gpg --quiet --no-default-keyring --keyring gnupg-ring:"$sig_file" --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys "$keyid"
       expiry=$(gpg --no-default-keyring --keyring="$sig_file" --list-keys --with-colons --fixed-list-mode | keyid=$keyid perl -wne 'if (/^(pub|sub):.*:$ENV{keyid}:/) { my @f = split /:/; print "$f[6]\n" }')
