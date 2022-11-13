@@ -9,8 +9,11 @@
 #        - download and save the key using gpg
 #      - add "[signed-by=/usr/share/keyrings/...]" to the "deb..." line
 #    - make a backup of the old .list file as .list.apt-key.bak
-#  After the migration you have to delete (or rename to be safe) /etc/apt/trusted.gpg.d and
-#  /etc/apt/trusted.gpg
+#
+# USAGE
+#   See --help.
+#   Back up /etc/apt/trusted.gpg.d and /etc/apt/trusted.gpg beforehand.
+#   After the migration, check that 'apt update' works, then delete the originals.
 #
 # REQUIREMENTS
 #   perl, curl, gpg
@@ -20,18 +23,43 @@
 #   But you can manually download the ASCII armored key and then run migrate-apt-keys.sh:
 #     curl https://keys.anydesk.com/repos/DEB-GPG-KEY | gpg --dearmor >/usr/share/keyrings/anydesk-stable-archive-keyring.gpg
 #   See: https://lists.ubuntu.com/archives/ubuntu-users/2022-January/306500.html
+#
+# AUTHORS
+#   Jens Berthold (https://github.com/maxhq); original GitHub gist: https://gist.github.com/maxhq/7dadf55064aaadc4d9e5993f89fad7b0
+#   Alin Mr (https://github.com/mralusw)
 
 set -ue
-
-workdir=$(mktemp)
 
 eecho() {
   printf '%s\n' "$*"
 }
 
-for repo in /etc/apt/sources.list.d/*.list; do
+case "${1:-}" in (-h|--help)
+  cat <<'EOF'
+Args: [ KEYRING_FOLDER [SOURCE.list]... ]
+EOF
+  exit 0
+esac
+
+workdir=$(mktemp -d)
+cleanup() {
+  set +e
+  trap - EXIT PIPE INT TERM QUIT
+  rm -rf "$workdir"
+}
+trap 'cleanup' EXIT
+trap 'cleanup; exit 1' PIPE INT TERM QUIT
+
+keyrings=/usr/share/keyrings
+if [ "$#" != 0 ]; then
+  keyrings=$1; mkdir -p "$keyrings"
+  shift
+fi
+if [ "$#" = 0 ]; then set -- /etc/apt/sources.list /etc/apt/sources.list.d/*.list; fi
+
+for repo; do
   sig_base=${repo%.list}; sig_base=${sig_base##*/}
-  sig_file=/usr/share/keyrings/${sig_base}-archive-keyring.gpg
+  sig_file=$keyrings/$sig_base-archive-keyring.gpg
   skip_repo=false
   new_repo=$workdir/new_repo.list; : >"$new_repo"
 
