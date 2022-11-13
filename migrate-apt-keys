@@ -52,18 +52,19 @@ trap 'cleanup; exit 1' PIPE INT TERM QUIT
 
 keyrings=/usr/share/keyrings
 if [ "$#" != 0 ]; then
-  keyrings=$1; mkdir -p "$keyrings"
+  keyrings=$1
   shift
 fi
+mkdir -p "$keyrings"
 if [ "$#" = 0 ]; then set -- /etc/apt/sources.list /etc/apt/sources.list.d/*.list; fi
 
 for repo; do
   sig_base=${repo%.list}; sig_base=${sig_base##*/}
   sig_file=$keyrings/$sig_base-archive-keyring.gpg
-  skip_repo=false
+  sig_keys=' '
   new_repo=$workdir/new_repo.list; : >"$new_repo"
+  now_secs=$(date '+%s')
 
-  migrated=false
   while read -r line; do
 
     case "$line" in
@@ -77,9 +78,6 @@ for repo; do
 
     eecho "$sig_base: += $line"
 
-    if [ -f "$sig_file" ]; then
-      eecho "$sig_base: key already exists - skipping download"
-    else
       # assemble URL
       url=$(eecho "$line" | perl -pe 's{^ (?:(?:deb|deb-src) \s+) (?: \[[^\]]+] \s+)? (\S+?)/? \s+ (\S+) \s+ .* }{ $suite=$2; "$1/".($suite=~m|/$|?$suite:"dists/$2/") }xe')
       eecho "$sig_base: downloading $url"
@@ -96,16 +94,14 @@ for repo; do
       if [ -z "$keyid" ]; then eecho "$sig_base: Could not find key id in signature"; exit 1; fi
       eecho "$sig_base: key id = $keyid"
 
+    if [ -n "${sig_keys##* $keyid *}" ]; then
       # download key
-      temp_sig=$workdir/temp_sig
-      gpg --quiet --no-default-keyring --keyring "$temp_sig" --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys "$keyid"
-      expiry=$(gpg --no-default-keyring --keyring="$temp_sig" --list-keys --with-colons --fixed-list-mode | grep pub | cut -d: -f7)
-      if [ ! -z "$expiry" ] && [ $expiry -lt $(date '+%s') ]; then
-        expiry_date=$(date -d "1970-01-01 UTC $expiry seconds" +"%Y-%m-%d %T %z")
-        eecho "$sig_base: SKIPPING migration - key expired on $expiry_date"
-        skip_repo=true; break
+      gpg --quiet --no-default-keyring --keyring gnupg-ring:"$sig_file" --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys "$keyid"
+      expiry=$(gpg --no-default-keyring --keyring="$sig_file" --list-keys --with-colons --fixed-list-mode | keyid=$keyid perl -wne 'if (/^(pub|sub):.*:$ENV{keyid}:/) { my @f = split /:/; print "$f[6]\n" }')
+      if [ -n "$expiry" ] && [ "$expiry" -lt "$now_secs" ]; then
+        eecho "$sig_base: key $keyid expired on $(date -d "1970-01-01 UTC $expiry seconds" +"%Y-%m-%d %T %z")"
       fi
-      mv "$temp_sig" "$sig_file"
+      sig_keys=" $keyid$sig_keys"
       chmod 0644 "$sig_file"
     fi
 
@@ -114,15 +110,13 @@ for repo; do
   ^ ((?:deb|deb-src) \s+) (?: \[ ([^\]]+) ] \s+ )? (.*)
 }{$1\[$2 signed-by=$ENV{sig_file}\] $3}x'
 
-    migrated=true
-  done <"$repo"
+  done <"$repo"  # while read...
 
-  if "$migrated" && ! "$skip_repo"; then
-    cp "$repo" "$repo.apt-key.bak"
-    # preserve permissions
-    cat "$new_repo" >"$repo"
-    eecho "$sig_base: migration done"
-  fi
-done
+  rm -f "${sig_file}~"
+  cp "$repo" "$repo.apt-key.bak"
+  # preserve permissions
+  cat "$new_repo" >"$repo"
+  eecho "$sig_base: migration done"
+done  # for repo...
 
 rm -rf "$workdir"
