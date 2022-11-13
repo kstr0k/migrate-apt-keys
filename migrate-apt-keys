@@ -92,7 +92,7 @@ for repo; do
       fi
 
       # read key ID from signature
-      keyid=$(eecho "$sigfile" | gpg --verify -vv 2>&1 | tr '\n' ' ' | sed -E 's/.*signature.*keyid ([0-9A-Z]+).*/\1/i')
+      keyid=$(eecho "$sigfile" | gpg --verify -vv 2>&1 | tr '\n' ' ' | perl -pe 's{.*signature.*keyid ([0-9A-Z]+).*}{$1}i')
       if [ -z "$keyid" ]; then eecho "$sig_base: Could not find key id in signature"; exit 1; fi
       eecho "$sig_base: key id = $keyid"
 
@@ -109,9 +109,10 @@ for repo; do
       chmod 0644 "$sig_file"
     fi
 
-    eecho "$line" \
-     | SIG=$sig_file perl -pe 's{^ ((?:deb|deb-src) \s+) (?: \[ ([^\]]+) ] \s+ )? (.*) }{$1\[$2 signed-by=$ENV{SIG}\] $3}x' \
-     >>"$new_repo"
+    eecho "$line" |
+     sig_file=$sig_file perl >>"$new_repo" -pe 's{
+  ^ ((?:deb|deb-src) \s+) (?: \[ ([^\]]+) ] \s+ )? (.*)
+}{$1\[$2 signed-by=$ENV{sig_file}\] $3}x'
 
     migrated=true
   done <"$repo"
