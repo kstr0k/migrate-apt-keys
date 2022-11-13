@@ -65,7 +65,8 @@ mkdir -p "$keyrings"
 if [ "$#" = 0 ]; then set -- /etc/apt/sources.list /etc/apt/sources.list.d/*.list; fi
 
 for repo; do
-  sig_base=${repo%.list}; sig_base=${sig_base##*/}
+  test -f "$repo" || continue
+  sig_base=${repo##*/}; sig_base=${sig_base%.list}; sig_base=${sig_base%.list.*}
   sig_file=$keyrings/$sig_base-apt-keyring.gpg
   sig_keys=' '
   new_repo=$workdir/new_repo.list; : >"$new_repo"
