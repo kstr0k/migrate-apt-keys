@@ -98,14 +98,14 @@ for repo; do
     else
       eecho "$sig_base: downloading $url"
       # download signature
-      if ! sigfile=$(curl -s -f -L "${url}InRelease"); then
-        if ! sigfile=$(curl -s -f -L "${url}Release.gpg"); then
+      if ! sig=$(curl -s -f -L "${url}InRelease"); then
+        if ! sig=$(curl -s -f -L "${url}Release.gpg"); then
           eecho "$sig_base: URL ${url}[InRelease|Release.gpg] not found"; exit 1
         fi
       fi
 
       # read key ID from signature
-      keyid=$(eecho "$sigfile" | gpg --verify -vv 2>&1 | tr '\n' ' ' | perl -pe 's{.*signature.*keyid ([0-9A-Z]+).*}{$1}i')
+      keyid=$(eecho "$sig" | gpg --verify -vv 2>&1 | tr '\n' ' ' | perl -pe 's{.*signature.*keyid ([0-9A-Z]+).*}{$1}i')
       if [ -z "$keyid" ]; then eecho "$sig_base: Could not find key id in signature"; exit 1; fi
       eecho "$sig_base: key id = $keyid"
       url_key_map="$newline$url $keyid$url_key_map"
