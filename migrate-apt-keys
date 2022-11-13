@@ -25,6 +25,10 @@ set -ue
 
 workdir=$(mktemp)
 
+eecho() {
+  printf '%s\n' "$*"
+}
+
 for repo in /etc/apt/sources.list.d/*.list; do
   sig_base=${repo%.list}; sig_base=${sig_base##*/}
   sig_file=/usr/share/keyrings/${sig_base}-archive-keyring.gpg
@@ -36,33 +40,33 @@ for repo in /etc/apt/sources.list.d/*.list; do
 
     case "$line" in
       (deb-src*|deb*) ;;
-      (*) echo "$line" >>"$new_repo"; continue ;  # unmodified if no repo definition
+      (*) eecho "$line" >>"$new_repo"; continue ;  # unmodified if no repo definition
     esac
     # skip if already "signed-by"
     case "$line" in
-      (*'['*signed-by*']'*) echo "$line" >>"$new_repo"; continue ;;
+      (*'['*signed-by*']'*) eecho "$line" >>"$new_repo"; continue ;;
     esac
 
-    echo "$sig_base: += $line"
+    eecho "$sig_base: += $line"
 
     if [ -f "$sig_file" ]; then
-      echo "$sig_base: key already exists - skipping download"
+      eecho "$sig_base: key already exists - skipping download"
     else
       # assemble URL
-      url=$(echo "$line" | perl -pe 's{^ (?:(?:deb|deb-src) \s+) (?: \[[^\]]+] \s+)? (\S+?)/? \s+ (\S+) \s+ .* }{ $suite=$2; "$1/".($suite=~m|/$|?$suite:"dists/$2/") }xe')
-      echo "$sig_base: downloading $url"
+      url=$(eecho "$line" | perl -pe 's{^ (?:(?:deb|deb-src) \s+) (?: \[[^\]]+] \s+)? (\S+?)/? \s+ (\S+) \s+ .* }{ $suite=$2; "$1/".($suite=~m|/$|?$suite:"dists/$2/") }xe')
+      eecho "$sig_base: downloading $url"
 
       # download signature
       if ! sigfile=$(curl -s -f -L "${url}InRelease"); then
         if ! sigfile=$(curl -s -f -L "${url}Release.gpg"); then
-          echo "$sig_base: URL ${url}[InRelease|Release.gpg] not found"; exit 1
+          eecho "$sig_base: URL ${url}[InRelease|Release.gpg] not found"; exit 1
         fi
       fi
 
       # read key ID from signature
-      keyid=$(echo "$sigfile" | gpg --verify -vv 2>&1 | tr '\n' ' ' | sed -E 's/.*signature.*keyid ([0-9A-Z]+).*/\1/i')
-      if [ -z "$keyid" ]; then echo "$sig_base: Could not find key id in signature"; exit 1; fi
-      echo "$sig_base: key id = $keyid"
+      keyid=$(eecho "$sigfile" | gpg --verify -vv 2>&1 | tr '\n' ' ' | sed -E 's/.*signature.*keyid ([0-9A-Z]+).*/\1/i')
+      if [ -z "$keyid" ]; then eecho "$sig_base: Could not find key id in signature"; exit 1; fi
+      eecho "$sig_base: key id = $keyid"
 
       # download key
       temp_sig=$workdir/temp_sig
@@ -70,14 +74,14 @@ for repo in /etc/apt/sources.list.d/*.list; do
       expiry=$(gpg --no-default-keyring --keyring="$temp_sig" --list-keys --with-colons --fixed-list-mode | grep pub | cut -d: -f7)
       if [ ! -z "$expiry" ] && [ $expiry -lt $(date '+%s') ]; then
         expiry_date=$(date -d "1970-01-01 UTC $expiry seconds" +"%Y-%m-%d %T %z")
-        echo "$sig_base: SKIPPING migration - key expired on $expiry_date"
+        eecho "$sig_base: SKIPPING migration - key expired on $expiry_date"
         skip_repo=true; break
       fi
       mv "$temp_sig" "$sig_file"
       chmod 0644 "$sig_file"
     fi
 
-    echo "$line" \
+    eecho "$line" \
      | SIG=$sig_file perl -pe 's{^ ((?:deb|deb-src) \s+) (?: \[ ([^\]]+) ] \s+ )? (.*) }{$1\[$2 signed-by=$ENV{SIG}\] $3}x' \
      >>"$new_repo"
 
@@ -88,7 +92,7 @@ for repo in /etc/apt/sources.list.d/*.list; do
     cp "$repo" "$repo.apt-key.bak"
     # preserve permissions
     cat "$new_repo" >"$repo"
-    echo "$sig_base: migration done"
+    eecho "$sig_base: migration done"
   fi
 done
 
