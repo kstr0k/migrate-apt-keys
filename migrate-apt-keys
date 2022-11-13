@@ -120,10 +120,14 @@ for repo; do
   done <"$repo"  # while read...
 
   rm -f "${sig_file}~"
-  cp "$repo" "$repo.apt-key.bak"
-  # preserve permissions
-  cat "$new_repo" >"$repo"
-  eecho "$sig_base: migration done"
+  if ! cmp "$repo" "$new_repo" >/dev/null 2>&1; then
+    cp "$repo" "$repo.apt-key.bak"
+    # preserve permissions
+    cat "$new_repo" >"$repo"
+    eecho "$sig_base: migration done"
+  else
+    eecho "$sig_base: unchanged"
+  fi
 done  # for repo...
 
 rm -rf "$workdir"
