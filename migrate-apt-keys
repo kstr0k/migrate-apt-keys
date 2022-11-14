@@ -48,7 +48,7 @@ EOF
   exit 0
 esac
 
-workdir=$(mktemp -d)
+workdir=$(cd "${TMPDIR:-/tmp}"; printf '%s/' "$PWD"; mktemp -d migrate.XXXXXX)
 cleanup() {
   set +e
   trap - EXIT PIPE INT TERM QUIT
