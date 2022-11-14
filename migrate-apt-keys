@@ -134,9 +134,9 @@ for repo; do
     cp "$repo" "$repo.apt-key.bak"
     # preserve permissions
     cat "$new_repo" >"$repo"
-    eecho "$sig_base: migration done"
+    eecho "$sig_base: migration done$newline"
   else
-    eecho "$sig_base: unchanged"
+    eecho "$sig_base: unchanged$newline"
   fi
 done  # for repo...
 
