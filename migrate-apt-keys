@@ -37,7 +37,7 @@ eecho() {
   printf '%s\n' "$*"
 }
 
-case "${1:-}" in (-h|--help)
+usage() {
   cat <<EOF
 Args: [ KEYRING_FOLDER [SOURCE.list]... ]
 Defaults:
@@ -48,8 +48,9 @@ Before migrating, back up KEYRING_FOLDER, as well as SOURCEs. Files therein
 will be modified. After migrating, check if 'apt update' works, then delete
 (or better rename) '/etc/apt/trusted.gpg.d' and '/etc/apt/trusted.gpg'.
 EOF
-  exit 0
-esac
+}
+
+case "${1:-}" in (-h|--help) usage; exit 0 ;; esac
 
 workdir=$(cd "${TMPDIR:-/tmp}"; printf '%s/' "$PWD"; mktemp -d migrate.XXXXXX)
 cleanup() {
