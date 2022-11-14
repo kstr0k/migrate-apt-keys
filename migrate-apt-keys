@@ -30,6 +30,8 @@ set -ue
 
 newline='
 '
+url_key_map=$newline
+
 
 keyrings=/usr/local/share/keyrings
 
@@ -70,7 +72,27 @@ mkdir -p "$keyrings"
 [ "$#" = 0 ] || shift
 [ "$#" != 0 ] || set -- /etc/apt/sources.list /etc/apt/sources.list.d/*.list
 
-url_key_map=$newline
+url2keyid() {  # args: URL; out: keyid
+    local url; url=$1; shift
+    local sig
+    if pat_match "$url_key_map" "*$newline$url *"; then
+      keyid=$url_key_map; keyid=${keyid##*$newline$url }; keyid=${keyid%%$newline*}
+    else
+      eecho "$sig_base: downloading $url"
+      # download signature
+      if ! sig=$(curl -s -f -L "${url}InRelease"); then
+        if ! sig=$(curl -s -f -L "${url}Release.gpg"); then
+          eecho "$sig_base: URL ${url}[InRelease|Release.gpg] not found"; exit 1
+        fi
+      fi
+
+      # read key ID from signature
+      keyid=$(eecho "$sig" | gpg --verify -vv 2>&1 | tr '\n' ' ' | perl -pe 's{.*signature.*keyid ([0-9A-Z]+).*}{$1}i')
+      if [ -z "$keyid" ]; then eecho "$sig_base: Could not find key id in signature"; exit 1; fi
+      eecho "$sig_base: key id = $keyid"
+      url_key_map="$newline$url $keyid$url_key_map"
+    fi
+}
 
 for repo; do
   test -f "$repo" || continue
@@ -93,26 +115,7 @@ for repo; do
 
     eecho "$sig_base: += $line"
 
-    # assemble URL
-    url=$(eecho "$line" | perl -pe 's{^ (?:(?:deb|deb-src) \s+) (?: \[[^\]]+] \s+)? (\S+?)/? \s+ (\S+) \s+ .* }{ $suite=$2; "$1/".($suite=~m|/$|?$suite:"dists/$2/") }xe')
-
-    if pat_match "$url_key_map" "*$newline$url *"; then
-      keyid=${url_key_map##*$newline$url }; keyid=${keyid%%$newline*}
-    else
-      eecho "$sig_base: downloading $url"
-      # download signature
-      if ! sig=$(curl -s -f -L "${url}InRelease"); then
-        if ! sig=$(curl -s -f -L "${url}Release.gpg"); then
-          eecho "$sig_base: URL ${url}[InRelease|Release.gpg] not found"; exit 1
-        fi
-      fi
-
-      # read key ID from signature
-      keyid=$(eecho "$sig" | gpg --verify -vv 2>&1 | tr '\n' ' ' | perl -pe 's{.*signature.*keyid ([0-9A-Z]+).*}{$1}i')
-      if [ -z "$keyid" ]; then eecho "$sig_base: Could not find key id in signature"; exit 1; fi
-      eecho "$sig_base: key id = $keyid"
-      url_key_map="$newline$url $keyid$url_key_map"
-    fi
+    url2keyid "$(eecho "$line" | perl -pe 's{^ (?:(?:deb|deb-src) \s+) (?: \[[^\]]+] \s+)? (\S+?)/? \s+ (\S+) \s+ .* }{ $suite=$2; "$1/".($suite=~m|/$|?$suite:"dists/$2/") }xe')"
 
     if [ -n "$keyid" ] && ! pat_match "$sig_keys" "* $keyid *"; then
       # download key
