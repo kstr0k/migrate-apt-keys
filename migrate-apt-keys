@@ -60,12 +60,10 @@ cleanup() {
 trap 'cleanup' EXIT
 trap 'cleanup; exit 1' PIPE INT TERM QUIT
 
-if [ "$#" != 0 ]; then
-  keyrings=$1
-  shift
-fi
+[ -z "${1:-}" ] || keyrings=$1
 mkdir -p "$keyrings"
-if [ "$#" = 0 ]; then set -- /etc/apt/sources.list /etc/apt/sources.list.d/*.list; fi
+[ "$#" = 0 ] || shift
+[ "$#" != 0 ] || set -- /etc/apt/sources.list /etc/apt/sources.list.d/*.list
 
 url_key_map=$newline
 
