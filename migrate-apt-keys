@@ -50,6 +50,10 @@ will be modified. After migrating, check if 'apt update' works, then delete
 EOF
 }
 
+pat_match() {  # args: STR PATTERN
+  case "$1" in ($2) return 0 ;; (*) return 1 ;; esac
+}
+
 case "${1:-}" in (-h|--help) usage; exit 0 ;; esac
 
 workdir=$(cd "${TMPDIR:-/tmp}"; printf '%s/' "$PWD"; mktemp -d migrate.XXXXXX)
@@ -92,7 +96,7 @@ for repo; do
     # assemble URL
     url=$(eecho "$line" | perl -pe 's{^ (?:(?:deb|deb-src) \s+) (?: \[[^\]]+] \s+)? (\S+?)/? \s+ (\S+) \s+ .* }{ $suite=$2; "$1/".($suite=~m|/$|?$suite:"dists/$2/") }xe')
 
-    if [ -z "${url_key_map##*$newline$url *}" ]; then
+    if pat_match "$url_key_map" "*$newline$url *"; then
       keyid=${url_key_map##*$newline$url }; keyid=${keyid%%$newline*}
     else
       eecho "$sig_base: downloading $url"
@@ -110,7 +114,7 @@ for repo; do
       url_key_map="$newline$url $keyid$url_key_map"
     fi
 
-    if [ -n "$keyid" ] && [ -n "${sig_keys##* $keyid *}" ]; then
+    if [ -n "$keyid" ] && ! pat_match "$sig_keys" "* $keyid *"; then
       # download key
       gpg --quiet --no-default-keyring --keyring gnupg-ring:"$sig_file" --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys "$keyid"
       expiry=$(gpg --no-default-keyring --keyring="$sig_file" --list-keys --with-colons --fixed-list-mode | keyid=$keyid perl -wne 'if (/^(pub|sub):.*:$ENV{keyid}:/) { my @f = split /:/; print "$f[6]\n" }')
