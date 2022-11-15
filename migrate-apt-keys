@@ -72,7 +72,69 @@ mkdir -p "$keyrings"
 [ "$#" = 0 ] || shift
 [ "$#" != 0 ] || set -- /etc/apt/sources.list /etc/apt/sources.list.d/*.list
 
+process_repo() {  # args: REPO
+  repo=$1; shift
+  if ! [ -r "$repo" ]; then eecho "Could not read .list file \"$repo\""; return 0; fi
+  : >"$new_repo"
+  local sig_base; sig_base=${repo##*/}; sig_base=${sig_base%.list}; sig_base=${sig_base%.list.*}
+  local sig_file; sig_file=$keyrings/$sig_base-apt-keyring.gpg
+  local sig_keys; sig_keys=' '
+  local now_secs; now_secs=$(date '+%s')
+  local line
+
+  while read -r line; do
+    process_line
+    eecho "$line" >>"$new_repo"
+  done <"$repo"
+  rm -f "${sig_file}~"
+
+  if ! cmp "$repo" "$new_repo" >/dev/null 2>&1; then
+    cp "$repo" "$repo.apt-key.bak"
+    cat "$new_repo" >"$repo"  # preserve permissions
+    eecho "$sig_base: migrated$newline"
+  else
+    eecho "$sig_base: unchanged$newline"
+  fi
+}
+
+process_line() {  # modifies: $line; uses locals of process_repo()
+    case "$line" in
+      (deb-src*|deb*) ;;
+      (*) return 0 ;;  # unmodified if not repo definition
+    esac
+    if eecho "$line" | grep -i '\[.*signed-by.*\]' >/dev/null; then return 0; fi  # skip if already "signed-by"
+
+    eecho "$sig_base: += $line"
+
+    if ! url=$(eecho "$line" | perl -pe 's{^ (?:(?:deb|deb-src) \s+) (?: \[[^\]]+] \s+)? (\S+?)/? \s+ (\S+) \s+ .* }{ $suite=$2; "$1/".($suite=~m|/$|?$suite:"dists/$2/") }xe'); then
+      eecho "$sig_base: cannot parse line"
+      return 0
+    fi
+    url2keyid "$url"
+    [ -n "$keyid" ] || return 0
+
+    if ! pat_match "$sig_keys" "* $keyid *"; then  # download key
+      if ! gpg --quiet --no-default-keyring --keyring gnupg-ring:"$sig_file" --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys "$keyid"; then
+        eecho "$sig_base: couldn't download $keyid from server"; return 0
+      fi
+      expiry=$(gpg --no-default-keyring --keyring="$sig_file" --list-keys --with-colons --fixed-list-mode | keyid=$keyid perl -wne 'if (/^(pub|sub):.*:$ENV{keyid}:/) { my @f = split /:/; print "$f[6]\n" }')
+      if [ -n "$expiry" ] && [ "$expiry" -lt "$now_secs" ]; then
+        eecho "$sig_base: key $keyid expired on $(date -d "1970-01-01 UTC $expiry seconds" +"%Y-%m-%d %T %z")"
+      fi
+      sig_keys=" $keyid$sig_keys"
+      chmod 0644 "$sig_file"
+    fi
+
+    local m_line; ! m_line=$(
+      eecho "$line" |
+        sig_file=$sig_file perl -pe 's{
+  ^ ((?:deb|deb-src) \s+) (?: \[ ([^\]]+) ] \s+ )? (.*)
+}{$1\[$2 signed-by=$ENV{sig_file}\] $3}x') ||
+      line=$m_line
+}
+
 url2keyid() {  # args: URL; out: keyid
+    keyid=
     local url; url=$1; shift
     local sig
     if pat_match "$url_key_map" "*$newline$url *"; then
@@ -82,68 +144,21 @@ url2keyid() {  # args: URL; out: keyid
       # download signature
       if ! sig=$(curl -s -f -L "${url}InRelease"); then
         if ! sig=$(curl -s -f -L "${url}Release.gpg"); then
-          eecho "$sig_base: URL ${url}[InRelease|Release.gpg] not found"; exit 1
+          eecho "$sig_base: URL ${url}[InRelease|Release.gpg] not found"; return 0
         fi
       fi
 
       # read key ID from signature
       keyid=$(eecho "$sig" | gpg --verify -vv 2>&1 | tr '\n' ' ' | perl -pe 's{.*signature.*keyid ([0-9A-Z]+).*}{$1}i')
-      if [ -z "$keyid" ]; then eecho "$sig_base: Could not find key id in signature"; exit 1; fi
+      if [ -z "$keyid" ]; then eecho "$sig_base: Could not find key id in signature"; return 0; fi
       eecho "$sig_base: key id = $keyid"
       url_key_map="$newline$url $keyid$url_key_map"
     fi
 }
 
+new_repo=$workdir/new_repo.list
 for repo; do
-  test -f "$repo" || continue
-  sig_base=${repo##*/}; sig_base=${sig_base%.list}; sig_base=${sig_base%.list.*}
-  sig_file=$keyrings/$sig_base-apt-keyring.gpg
-  sig_keys=' '
-  new_repo=$workdir/new_repo.list; : >"$new_repo"
-  now_secs=$(date '+%s')
-
-  while read -r line; do
-
-    case "$line" in
-      (deb-src*|deb*) ;;
-      (*) eecho "$line" >>"$new_repo"; continue ;  # unmodified if no repo definition
-    esac
-    # skip if already "signed-by"
-    case "$line" in
-      (*'['*signed-by*']'*) eecho "$line" >>"$new_repo"; continue ;;
-    esac
-
-    eecho "$sig_base: += $line"
-
-    url2keyid "$(eecho "$line" | perl -pe 's{^ (?:(?:deb|deb-src) \s+) (?: \[[^\]]+] \s+)? (\S+?)/? \s+ (\S+) \s+ .* }{ $suite=$2; "$1/".($suite=~m|/$|?$suite:"dists/$2/") }xe')"
-
-    if [ -n "$keyid" ] && ! pat_match "$sig_keys" "* $keyid *"; then
-      # download key
-      gpg --quiet --no-default-keyring --keyring gnupg-ring:"$sig_file" --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys "$keyid"
-      expiry=$(gpg --no-default-keyring --keyring="$sig_file" --list-keys --with-colons --fixed-list-mode | keyid=$keyid perl -wne 'if (/^(pub|sub):.*:$ENV{keyid}:/) { my @f = split /:/; print "$f[6]\n" }')
-      if [ -n "$expiry" ] && [ "$expiry" -lt "$now_secs" ]; then
-        eecho "$sig_base: key $keyid expired on $(date -d "1970-01-01 UTC $expiry seconds" +"%Y-%m-%d %T %z")"
-      fi
-      sig_keys=" $keyid$sig_keys"
-      chmod 0644 "$sig_file"
-    fi
-
-    eecho "$line" |
-     sig_file=$sig_file perl >>"$new_repo" -pe 's{
-  ^ ((?:deb|deb-src) \s+) (?: \[ ([^\]]+) ] \s+ )? (.*)
-}{$1\[$2 signed-by=$ENV{sig_file}\] $3}x'
-
-  done <"$repo"  # while read...
-
-  rm -f "${sig_file}~"
-  if ! cmp "$repo" "$new_repo" >/dev/null 2>&1; then
-    cp "$repo" "$repo.apt-key.bak"
-    # preserve permissions
-    cat "$new_repo" >"$repo"
-    eecho "$sig_base: migration done$newline"
-  else
-    eecho "$sig_base: unchanged$newline"
-  fi
-done  # for repo...
+  process_repo "$repo"
+done
 
 rm -rf "$workdir"
