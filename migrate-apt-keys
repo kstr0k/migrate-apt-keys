@@ -114,7 +114,12 @@ process_line() {  # modifies: $line; uses locals of process_repo()
   [ -n "$keyid" ] || return 0
 
   if ! glob_match "$sig_keys" "* $keyid *"; then  # download key
-    if ! gpg --quiet --no-default-keyring --keyring gnupg-ring:"$sig_file" --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys "$keyid"; then
+    GPG_OPTS=''
+    find_proxy
+    if [ -n "$found_proxy" ]; then
+      GPG_OPTS="--keyserver-options http-proxy=$found_proxy"
+    fi
+    if ! gpg $GPG_OPTS --quiet --no-default-keyring --keyring gnupg-ring:"$sig_file" --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys "$keyid"; then
       eecho "$sig_base: couldn't download $keyid from server"; return 0
     fi
     expiry=$(gpg --no-default-keyring --keyring="$sig_file" --list-keys --with-colons --fixed-list-mode | keyid=$keyid perl -wne 'if (/^(pub|sub):.*:$ENV{keyid}:/) { my @f = split /:/; print "$f[6]\n" }')
@@ -131,6 +136,20 @@ process_line() {  # modifies: $line; uses locals of process_repo()
 ^ ((?:deb|deb-src) \s+) (?: \[ ([^\]]+) ] \s+ )? (.*)
 }{$1\[$2 signed-by=$ENV{sig_file}\] $3}x') ||
     line=$m_line
+}
+
+# Check if http_proxy ir https_proxy or HTTP_PROXY or HTTPS_PROXY are set
+find_proxy() { # args: None; out: found_proxy
+  found_proxy=
+  if [ -n "$http_proxy" ]; then
+    found_proxy="$http_proxy"
+  elif [ -n "$https_proxy" ]; then
+    found_proxy="$https_proxy"
+  elif [ -n "$HTTP_PROXY" ]; then
+    found_proxy="$HTTP_PROXY"
+  elif [ -n "$HTTPS_PROXY" ]; then
+    found_proxy="$HTTPS_PROXY"
+  fi
 }
 
 url2keyid() {  # args: URL; out: keyid
